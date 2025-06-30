@@ -1,0 +1,62 @@
+name: Simple CI/CD Pipeline
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      # 步骤 1：检出代码
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      # 步骤 2：设置 Node.js 环境
+      - name: 设置 Node.js 环境
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20' # Ubuntu 24.04 支持 Node.js 20
+
+      # 步骤 3：缓存依赖
+      - name: 缓存 Node 模块
+        uses: actions/cache@v4
+        with:
+          path: ~/.npm
+          key: ${{ runner.os }}-node-${{ hashFiles('**/package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-node-
+
+      # 步骤 4：安装依赖
+      - name: 安装依赖
+        run: npm install
+
+      # 步骤 5：运行测试
+      - name: 运行测试
+        run: npm test
+        continue-on-error: true # 如果测试失败，允许继续部署（可调整）
+
+      # 步骤 6：构建项目
+      - name: 构建项目
+        run: npm run build
+        if: success()
+
+      # 步骤 7：部署到 Ubuntu 24.04 服务器
+      - name: 部署到服务器
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.HOST }}
+          username: ${{ secrets.USERNAME }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          port: 22
+          debug: true
+          script: |
+            cd /root/test_s/CI-CD
+            git pull origin main
+            npm install
+            npm run build
+            pm2 restart simple-express-app || pm2 start npm --name "simple-express-app" -- run start
+            echo "部署成功"
